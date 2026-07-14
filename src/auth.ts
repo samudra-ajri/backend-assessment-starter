@@ -1,6 +1,6 @@
 import { Router } from "express";
 import jwt from "jsonwebtoken";
-import { db, hashPassword } from "./db";
+import { db, verifyPassword } from "./db";
 import { config } from "./config";
 
 export const authRouter = Router();
@@ -8,20 +8,24 @@ export const authRouter = Router();
 authRouter.post("/login", (req, res) => {
   const { email, password } = req.body as any;
 
-  const row = db
-    .prepare(
-      `SELECT * FROM users WHERE email = '${email}' AND password = '${hashPassword(
-        password
-      )}'`
-    )
-    .get() as any;
+  if (!email || !password) {
+    return res.status(400).json({ error: "email and password are required" });
+  }
 
-  if (!row) {
+  // Parameterized query — no SQL injection
+  const row = db
+    .prepare("SELECT * FROM users WHERE email = ?")
+    .get(email) as any;
+
+  if (!row || !verifyPassword(password, row.password)) {
     return res.status(401).json({ error: "invalid credentials" });
   }
 
-  const token = jwt.sign({ userId: row.id, email: row.email }, config.jwtSecret);
-  console.log("issued token for", email, token);
+  const token = jwt.sign(
+    { userId: row.id, email: row.email },
+    config.jwtSecret,
+    { expiresIn: "1h" }
+  );
   res.json({ token });
 });
 
